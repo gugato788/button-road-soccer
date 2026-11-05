@@ -1,0 +1,112 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Button Road Soccer</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#0e1a12;color:#fff;font-family:system-ui,sans-serif;overflow:hidden;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%}
+#ui{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0e1a12ee;padding:16px}
+#ui.off{display:none}.box{background:#173321;border:1px solid #2c6b43;border-radius:14px;padding:18px;width:min(380px,100%)}
+h1{margin:0 0 12px;font-size:22px}input,select,button{width:100%;padding:12px;margin:5px 0;border-radius:10px;border:0;font-size:16px}
+button{background:#35c26a;color:#04210f;font-weight:700}button.s{background:#2a4a38;color:#fff}
+.pl{font-size:14px;margin:6px 0}.b{color:#6fa0ff}.r{color:#ff7070}#top{position:fixed;left:8px;top:6px;font-size:12px;opacity:.8}
+#cg{position:fixed;left:8px;bottom:8px;z-index:20;font-size:13px;max-width:60%;pointer-events:none;text-shadow:0 1px 2px #000}#cb{position:fixed;right:8px;top:6px;z-index:20;width:44px;padding:6px;margin:0;background:#000a;color:#fff}#ci{position:fixed;left:8px;right:60px;bottom:8px;z-index:21;display:none;margin:0}input[type=file]{background:#2a4a38;color:#fff;font-size:13px}
+</style></head><body>
+<canvas id="c"></canvas><div id="top"></div>
+<div id="cg"></div><button id="cb">💬</button><input id="ci" maxlength="120" placeholder="Mensagem e Enter">
+<div id="ui"><div class="box">
+<h1>⚽ Button Road Soccer</h1>
+<div id="lob"><input id="nm" maxlength="16" placeholder="Seu nome">
+<select id="sz"><option value="1">1v1</option><option value="2">2v2</option><option value="3">3v3</option><option value="4">4v4</option><option value="5" selected>5v5</option><option value="6">6v6</option></select>
+<button id="cr">Criar sala</button><input id="cd" maxlength="4" placeholder="Código da sala"><button class="s" id="jn">Entrar na sala</button></div>
+<div id="rm" style="display:none"><div id="rc" style="font-size:20px;font-weight:700"></div><div id="pls"></div>
+<div class="pl">Minha skin (PNG)</div><input type="file" id="fs" accept="image/png"><div id="fh"><div class="pl">Campo (PNG) — anfitrião</div><input type="file" id="ff" accept="image/png"><button class="s" id="fx">Remover campo</button></div>
+<select id="bt"><option value="0">Sem bots (só pessoas)</option><option value="1">Completar com bots fáceis</option><option value="2">Completar com bots médios</option><option value="3">Completar com bots difíceis</option></select>
+<button id="st">Iniciar partida</button><button class="s" id="cp">Copiar link</button><div id="msg" class="pl"></div></div>
+</div></div>
+<script>
+const $=id=>document.getElementById(id),cv=$('c'),x=cv.getContext('2d');
+let ws,me=0,R=null,S=null,disp=[],ball=[0,0],aim=null,ping=0,flash=0;
+const proto=location.protocol==='https:'?'wss':'ws';
+function conn(cb){ws=new WebSocket(proto+'://'+location.host);ws.onopen=cb;ws.onmessage=e=>on(JSON.parse(e.data));
+ ws.onclose=()=>{$('ui').className='';$('msg')&&($('msg').textContent='Conexão perdida. Recarregue a página.')}}
+const tx=o=>ws.readyState===1&&ws.send(JSON.stringify(o));
+const name=()=>$('nm').value.trim()||'Jogador';
+$('cr').onclick=()=>conn(()=>tx({t:'create',name:name(),size:$('sz').value}));
+$('jn').onclick=()=>conn(()=>tx({t:'join',name:name(),code:$('cd').value}));
+$('st').onclick=()=>tx({t:'start',bots:$('bt').value});
+$('cp').onclick=()=>{const u=location.origin+'/?r='+R.code;navigator.clipboard&&navigator.clipboard.writeText(u);$('cp').textContent='Link copiado!'};
+const q=new URLSearchParams(location.search).get('r');if(q)$('cd').value=q.toUpperCase();
+function on(m){
+ if(m.t==='you')me=m.id;
+ else if(m.t==='err')alert(m.msg);
+ else if(m.t==='pong')ping=Date.now()-m.ts;
+ else if(m.t==='goal')flash=40;
+ else if(m.t==='skin'){const im=new Image();im.src=m.img;skins[m.id]=im}
+ else if(m.t==='field'){if(m.img){fieldImg=new Image();fieldImg.src=m.img}else fieldImg=null}
+ else if(m.t==='chat'){chat.push(m);showChat();setTimeout(()=>{chat.shift();showChat()},12000)}
+ else if(m.t==='room'){R=m;$('lob').style.display='none';$('rm').style.display='block';
+  $('rc').textContent='Sala '+R.code+' ('+R.size+'v'+R.size+')';
+  $('pls').innerHTML=R.p.map(p=>'<div class="pl '+(p.team?'r':'b')+'">'+(p.team?'🔴':'🔵')+(p.bot?' 🤖 ':' ')+esc(p.name)+(p.bot?' (IA)':'')+(p.id===R.host?' 👑':'')+'</div>').join('');
+  $('fh').style.display=R.host===me?'block':'none';$('bt').style.display=R.host===me&&R.st!=='play'?'block':'none';$('st').style.display=R.host===me&&R.st!=='play'?'block':'none';
+  $('msg').textContent=R.st==='over'?'Fim de jogo! '+(S?S.sc[0]+' x '+S.sc[1]:''):(R.host===me?'':'Aguardando o anfitrião...');
+  $('ui').className=R.st==='play'?'off':'';disp.length=R.p.length}
+ else if(m.t==='s'){S=m;m.d.forEach((d,i)=>{if(!disp[i])disp[i]=d.slice()});if(!ball.t){ball[0]=m.b[0];ball[1]=m.b[1]}ball.t=m.b}
+}
+
+const skins={};let fieldImg=null,chat=[];
+function loadPng(f,cb){if(!f)return;if(f.type!=='image/png'||f.size>5e6){alert('Envie um PNG de até 5 MB');return}
+ const im=new Image();im.onload=()=>cb(im);im.onerror=()=>alert('PNG inválido');im.src=URL.createObjectURL(f)}
+function cover(im,w,h){const c=document.createElement('canvas');c.width=w;c.height=h;const g=c.getContext('2d'),s=Math.max(w/im.width,h/im.height);
+ g.drawImage(im,(w-im.width*s)/2,(h-im.height*s)/2,im.width*s,im.height*s);return c}
+$('fs').onchange=e=>loadPng(e.target.files[0],im=>{for(const n of [96,64]){const c=cover(im,n,n),g=c.getContext('2d');
+ g.globalCompositeOperation='destination-in';g.beginPath();g.arc(n/2,n/2,n/2,0,7);g.fill();const u=c.toDataURL('image/png');
+ if(u.length<=80000){tx({t:'skin',img:u});return}}alert('Imagem muito complexa. Use uma mais simples.')});
+$('ff').onchange=e=>loadPng(e.target.files[0],im=>{if(!R)return;for(const w of [1000,640]){const u=cover(im,w,Math.round(w*R.H/R.W)).toDataURL('image/png');
+ if(u.length<=1600000){tx({t:'field',img:u});return}}alert('Imagem muito pesada. Reduza o tamanho.')});
+$('fx').onclick=()=>tx({t:'field',img:null});
+$('cb').onclick=()=>{const i=$('ci');i.style.display=i.style.display==='block'?'none':'block';if(i.style.display==='block')i.focus()};
+$('ci').onkeydown=e=>{if(e.key==='Enter'&&e.target.value.trim()){tx({t:'chat',msg:e.target.value});e.target.value='';e.target.blur();e.target.style.display='none'}};
+function showChat(){$('cg').innerHTML=chat.slice(-5).map(c=>'<div><b class="'+(c.team?'r':'b')+'">'+esc(c.name)+':</b> '+esc(c.msg)+'</div>').join('')}
+const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+setInterval(()=>ws&&tx({t:'ping',ts:Date.now()}),2000);
+let sc=1,ox=0,oy=0;
+function fit(){cv.width=innerWidth*devicePixelRatio;cv.height=innerHeight*devicePixelRatio;
+ if(!R)return;sc=Math.min(cv.width/(R.W+120),cv.height/(R.H+70));ox=(cv.width-(R.W+120)*sc)/2+60*sc;oy=(cv.height-R.H*sc)/2+10*sc}
+addEventListener('resize',fit);fit();
+const wp=(px,py)=>[(px*devicePixelRatio-ox)/sc,(py*devicePixelRatio-oy)/sc];
+cv.addEventListener('pointerdown',e=>{if(!R||!S||S.st!=='play')return;const i=R.p.findIndex(p=>p.id===me);if(i<0||!disp[i])return;
+ const [a,b]=wp(e.clientX,e.clientY);if(Math.hypot(a-disp[i][0],b-disp[i][1])<60){aim={i,a,b};cv.setPointerCapture(e.pointerId)}});
+cv.addEventListener('pointermove',e=>{if(aim){[aim.a,aim.b]=wp(e.clientX,e.clientY)}});
+cv.addEventListener('pointerup',()=>{if(!aim)return;const d=disp[aim.i],dx=d[0]-aim.a,dy=d[1]-aim.b,p=Math.min(Math.hypot(dx,dy)/160,1);
+ if(p>0.05)tx({t:'shoot',dx,dy,p});aim=null});
+function draw(){requestAnimationFrame(draw);
+ x.setTransform(1,0,0,1,0,0);x.fillStyle='#0e1a12';x.fillRect(0,0,cv.width,cv.height);
+ if(!R){return}
+ if(S){S.d.forEach((d,i)=>{if(disp[i]){disp[i][0]+=(d[0]-disp[i][0])*.4;disp[i][1]+=(d[1]-disp[i][1])*.4}});
+  if(ball.t){ball[0]+=(ball.t[0]-ball[0])*.5;ball[1]+=(ball.t[1]-ball[1])*.5}}
+ x.setTransform(sc,0,0,sc,ox,oy);const W=R.W,H=R.H,g0=(H-R.gh)/2;
+ if(fieldImg&&fieldImg.complete&&fieldImg.naturalWidth)x.drawImage(fieldImg,0,0,W,H);else for(let i=0;i<14;i++){x.fillStyle=i%2?'#2f9e1d':'#3ab524';x.fillRect(W/14*i,0,W/14+1,H)}
+ x.strokeStyle='#fffc';x.lineWidth=3;x.strokeRect(0,0,W,H);x.beginPath();x.moveTo(W/2,0);x.lineTo(W/2,H);x.stroke();
+ x.beginPath();x.arc(W/2,H/2,H*.17,0,7);x.stroke();
+ const pw=W*.16,ph=H*.6,sw=W*.07,sh=H*.34;
+ x.strokeRect(0,(H-ph)/2,pw,ph);x.strokeRect(W-pw,(H-ph)/2,pw,ph);x.strokeRect(0,(H-sh)/2,sw,sh);x.strokeRect(W-sw,(H-sh)/2,sw,sh);
+ x.strokeStyle='#111';x.lineWidth=6;x.strokeRect(-36,g0,36,R.gh);x.strokeRect(W,g0,36,R.gh);
+ if(!S)return;
+ R.p.forEach((p,i)=>{const d=disp[i];if(!d)return;const col=p.team?'#e8403c':'#2f6bff';
+  x.fillStyle='#0003';x.beginPath();x.arc(d[0]+3,d[1]+4,22,0,7);x.fill();
+  x.fillStyle=col;x.beginPath();x.arc(d[0],d[1],22,0,7);x.fill();
+  const sk=skins[p.id];if(sk&&sk.complete&&sk.naturalWidth){x.save();x.beginPath();x.arc(d[0],d[1],19,0,7);x.clip();x.drawImage(sk,d[0]-19,d[1]-19,38,38);x.restore()}
+  x.lineWidth=4;x.strokeStyle=col;x.beginPath();x.arc(d[0],d[1],20,0,7);x.stroke();
+  x.lineWidth=2.5;x.strokeStyle=p.id===me?'#ffe14a':'#fff';x.beginPath();x.arc(d[0],d[1],22,0,7);x.stroke();
+  x.fillStyle='#fff';x.font='bold 15px sans-serif';x.textAlign='center';x.fillText((p.bot?'🤖 ':'')+p.name,d[0],d[1]+40)});
+ if(aim){const d=disp[aim.i],dx=d[0]-aim.a,dy=d[1]-aim.b,l=Math.hypot(dx,dy)||1,p=Math.min(l/160,1);
+  x.strokeStyle='hsl('+(120-p*120)+',90%,55%)';x.lineWidth=6;x.beginPath();x.moveTo(d[0],d[1]);x.lineTo(d[0]+dx/l*p*220,d[1]+dy/l*p*220);x.stroke()}
+ x.fillStyle='#fff';x.strokeStyle='#222';x.lineWidth=2;x.beginPath();x.arc(ball[0],ball[1],11,0,7);x.fill();x.stroke();
+ x.setTransform(1,0,0,1,0,0);const t=S.tm,mm=Math.floor(t/60),ss=String(t%60).padStart(2,'0');
+ x.fillStyle='#000c';x.fillRect(cv.width/2-110,0,220,52);x.fillStyle='#fff';x.textAlign='center';x.font='bold 28px sans-serif';
+ x.fillText(S.sc[0]+' - '+S.sc[1],cv.width/2,32);x.font='14px sans-serif';x.fillText(mm+':'+ss,cv.width/2,48);
+ if(flash>0){flash--;x.fillStyle='#ffe14a';x.font='bold 64px sans-serif';x.fillText('GOL!',cv.width/2,cv.height/2)}
+ $('top').textContent=ping+' ms'}
+new ResizeObserver(fit).observe(document.body);setInterval(()=>{if(R&&!cv.dataset.f){cv.dataset.f=1}fit()},500);
+draw();
+</script></body></html>
